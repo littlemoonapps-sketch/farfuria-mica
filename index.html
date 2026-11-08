@@ -80,6 +80,21 @@ button{font:inherit;color:inherit;cursor:pointer}
 .frow{display:grid;grid-template-columns:88px 1fr;gap:8px;align-items:center;min-width:0}
 .frow .chip{padding:5px 11px;font-size:.84rem}
 .filters .chip[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.motd{background:var(--accent-soft);border-radius:18px;padding:14px;display:flex;flex-direction:column;gap:12px}
+.motd-h{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.motd-h .btn.ghost{background:var(--surface)}
+.motd-sum{font-size:.95rem}
+.motd-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media (min-width:600px){.motd-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.mcard{display:flex;flex-direction:column;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden;padding:0;min-width:0}
+.mcard .body{padding:7px 9px 9px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.mcard .nm{font-weight:700;font-size:.88rem;line-height:1.25}
+.shared{display:flex;flex-direction:column;gap:6px}
+.tags{display:flex;flex-wrap:wrap;gap:6px}
+.tags span{background:var(--surface);border-radius:999px;padding:3px 10px;font-size:.84rem;font-weight:600}
+.tags small{color:var(--muted);font-weight:700}
+.motd-act{display:flex;gap:8px;flex-wrap:wrap}
+.motd-act .btn{flex:1 1 auto}
 /* planner */
 .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between}
 .btn{border:none;background:var(--accent);color:var(--accent-ink);border-radius:12px;padding:10px 16px;font-weight:700}
@@ -252,16 +267,62 @@ function bindFilters(root,onChange){root.querySelectorAll(".filters .chips").for
   if(g.dataset.g==="t"){maxT=v;store.set("maxT",v)}else{maxI=v;store.set("maxI",v)}
   g.querySelectorAll(".chip").forEach(x=>x.setAttribute("aria-pressed",x===b));onChange()}))}
 
+/* ---------- Meniul zilei ---------- */
+const NORM=[[/^banan/,"banană"],[/^ou(ă|a)?\b|^ouă/,"ouă"],[/^m(ă|a)r\b|^mere/,"măr"],[/^cartof dulce/,"cartof dulce"],[/^cartof/,"cartof"],[/^dovlec/,"dovlecel"],[/^ardei gra/,"ardei gras"],[/^lipi/,"lipie"],[/^morcov/,"morcov"],
+ [/fulgi.*ovăz/,"fulgi de ovăz"],[/^iaurt/,"iaurt"],[/^paste/,"paste"],[/^pâine/,"pâine"],[/^pară/,"pară"],[/^avocado/,"avocado"],[/^mazăre/,"mazăre"],[/^lapte( praf)?$|^lapte$/,"lapte"],[/^năut/,"năut"],[/^orez$/,"orez"],
+ [/^brânză de vaci/,"brânză de vaci"],[/^cașcaval/,"cașcaval"],[/^piept de pui|^pulpe de pui/,"pui"],[/^roșie/,"roșie"],[/^fructe de pădure|^afine/,"fructe de pădure"]];
+function norm(n){n=n.toLowerCase().replace(/\s*\(.*\)/,"").trim();for(const[re,k]of NORM)if(re.test(n))return k;return n}
+function keysOf(r){return [...new Set(r.i.filter(x=>x[3]!=="K").map(x=>norm(x[0])))]}
+function rng(seed){let a=0;for(const c of seed)a=(a*31+c.charCodeAt(0))|0;return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function dayMenu(roll,recent){
+  const rand=rng(iso(new Date())+"|"+ageK+"|"+maxT+"|"+maxI+"|"+roll);
+  const pools=["md","pr","ci","gu"].map(c=>{let p=R.filter(r=>matches(r,"",c));if(!p.length)p=R.filter(r=>fits(r)&&r.c===c);return p.map(r=>({r,k:keysOf(r)}))}).filter(p=>p.length);
+  // caută meniurile cu cele mai puține ingrediente distincte (cel mai mic număr + 2)
+  let min=1e9;const found=[];
+  const walk=(i,picked,set)=>{
+    if(i===pools.length){const n=set.size;if(n<min)min=n;if(n<=min+2&&found.length<20000)found.push({c:picked.slice(),n});return}
+    for(const x of pools[i]){const add=x.k.filter(k=>!set.has(k));if(set.size+add.length>min+2)continue;add.forEach(k=>set.add(k));picked.push(x.r);walk(i+1,picked,set);picked.pop();add.forEach(k=>set.delete(k))}
+  };
+  walk(0,[],new Set());
+  const rec=new Set(recent||[]);let bestS=1e9,pick=null;
+  for(const f of found){if(f.n>min+2)continue;const s=f.n+f.c.filter(r=>rec.has(r.id)).length*1.6+rand()*2.2;if(s<bestS){bestS=s;pick=f.c}}
+  return pick;
+}
+let motd=store.get("motd",{});
+function currentMenu(){const sig=iso(new Date())+"|"+ageK+"|"+maxT+"|"+maxI;
+  if(motd.sig!==sig||!Array.isArray(motd.ids)||!motd.ids.every(id=>byId[id])){motd={sig,roll:0,recent:motd.recent||[],ids:dayMenu(0,motd.recent).map(r=>r.id)};store.set("motd",motd)}
+  return motd.ids.map(id=>byId[id])}
+function rerollMenu(){motd.recent=(motd.recent||[]).concat(motd.ids).slice(-16);motd.roll++;motd.ids=dayMenu(motd.roll,motd.recent).map(r=>r.id);store.set("motd",motd)}
+function motdHTML(){
+  const menu=currentMenu();
+  const cnt={};menu.forEach(r=>keysOf(r).forEach(k=>cnt[k]=(cnt[k]||0)+1));
+  const total=Object.keys(cnt).length,shared=Object.keys(cnt).filter(k=>cnt[k]>1).sort((a,b)=>cnt[b]-cnt[a]);
+  return `<section class="motd" aria-labelledby="motd-h"><div class="motd-h"><div><span class="lbl">${days()[0].long}</span><h2 id="motd-h">Meniul zilei</h2></div>
+    <button class="btn ghost small" id="reroll">Alt meniu</button></div>
+  <p class="motd-sum"><b>${menu.length} mese, doar ${total} ingrediente</b> de cumpărat, fără cele din cămară.</p>
+  <div class="motd-grid">${menu.map(r=>`<button class="mcard" data-id="${r.id}">${imgTag(r.id,"ph",r.n)}<span class="body"><span class="lbl tx-${r.c}" style="font-size:.66rem">${CAT[r.c]} · ${r.t} min</span><span class="nm">${r.n}</span></span></button>`).join("")}</div>
+  ${shared.length?`<div class="shared"><span class="lbl">Se repetă</span><div class="tags">${shared.map(k=>`<span>${k} <small>×${cnt[k]}</small></span>`).join("")}</div></div>`:""}
+  <div class="motd-act"><button class="btn small" data-addday="0">Pune în planul de azi</button><button class="btn ghost small" data-addday="1">Pune mâine</button></div></section>`;
+}
+function bindMotd(v){
+  const menu=currentMenu();
+  v.querySelectorAll(".mcard").forEach(b=>b.onclick=()=>openRecipe(b.dataset.id));
+  v.querySelector("#reroll").onclick=()=>{rerollMenu();const old=v.querySelector(".motd");const t=document.createElement("div");t.innerHTML=motdHTML();old.replaceWith(t.firstElementChild);bindMotd(v)};
+  v.querySelectorAll("[data-addday]").forEach(b=>b.onclick=()=>{const d=days()[+b.dataset.addday];const l=plan[d.k]||[];let n=0;menu.forEach(r=>{if(!l.includes(r.id)){l.push(r.id);n++}});plan[d.k]=l;save();
+    toast(n?("Adăugat în plan pentru "+d.name.toLowerCase()+" · ingredientele sunt la Cumpărături"):"Meniul e deja în plan pentru "+d.name.toLowerCase());renderList()});
+}
+
 /* ---------- Rețete ---------- */
 function plannedDays(id){return days().filter(d=>(plan[d.k]||[]).includes(id))}
 function renderRetete(){
   const v=document.getElementById("v-retete");
-  v.innerHTML=`<input id="q" class="search" type="search" placeholder="Caută o rețetă sau un ingredient" value="${esc(query)}" aria-label="Caută">
+  v.innerHTML=motdHTML()+`<h2 style="margin-top:6px">Toate rețetele</h2><input id="q" class="search" type="search" placeholder="Caută o rețetă sau un ingredient" value="${esc(query)}" aria-label="Caută">
   <div class="chips" role="group" aria-label="Filtru">${[["all","Toate"],["md","Mic dejun"],["pr","Prânz"],["ci","Cină"],["gu","Gustări"]].map(([k,n])=>`<button class="chip" data-f="${k}" aria-pressed="${filter===k}">${n}</button>`).join("")}</div>
   ${filtersHTML()}
   <p class="muted count" id="cnt"></p>
   <div class="grid" id="rl"></div>`;
-  bindFilters(v,renderList);
+  bindFilters(v,()=>{renderList();const old=v.querySelector(".motd");const t=document.createElement("div");t.innerHTML=motdHTML();old.replaceWith(t.firstElementChild);bindMotd(v)});
+  bindMotd(v);
   v.querySelector("#q").addEventListener("input",e=>{query=e.target.value;renderList()});
   v.querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{filter=b.dataset.f;v.querySelectorAll("[data-f]").forEach(x=>x.setAttribute("aria-pressed",x===b));renderList()});
   renderList();
