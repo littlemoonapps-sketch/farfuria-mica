@@ -95,6 +95,15 @@ button{font:inherit;color:inherit;cursor:pointer}
 .tags small{color:var(--muted);font-weight:700}
 .motd-act{display:flex;gap:8px;flex-wrap:wrap}
 .motd-act .btn{flex:1 1 auto}
+.heart{position:absolute;top:8px;left:8px;background:var(--surface);color:var(--coral);font-weight:700;font-size:.85rem;border-radius:999px;padding:1px 8px;line-height:1.5}
+.heart.no{color:var(--muted);font-size:.72rem}
+.rcard.dis{opacity:.55}
+.hidtoggle{grid-column:1/-1;justify-self:center}
+.rate{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.rate button{border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:10px;font-weight:700}
+.rate button[data-v="1"][aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.rate button[data-v="-1"][aria-pressed="true"]{background:var(--danger-bg);color:var(--danger);border-color:var(--danger)}
+.rate-note{grid-column:1/-1;font-size:.88rem}
 /* planner */
 .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between}
 .btn{border:none;background:var(--accent);color:var(--accent-ink);border-radius:12px;padding:10px 16px;font-weight:700}
@@ -227,6 +236,9 @@ let ageK=store.get("age","18"); if(!AGES.find(a=>a.k===ageK))ageK="18";
 let plan=store.get("plan",{}); let checks=store.get("checks",{});
 let filter="all",query="",shopScope="all";
 let maxT=store.get("maxT",0),maxI=store.get("maxI",0);
+let prefs=store.get("prefs",{}),showDis=false;
+const liked=id=>prefs[id]===1,disliked=id=>prefs[id]===-1;
+function setPref(id,v){if(prefs[id]===v)delete prefs[id];else prefs[id]=v;store.set("prefs",prefs)}
 const TOPT=[[0,"Oricât"],[10,"≤ 10 min"],[20,"≤ 20 min"],[30,"≤ 30 min"],[45,"≤ 45 min"]];
 const IOPT=[[0,"Oricâte"],[3,"≤ 3"],[5,"≤ 5"],[7,"≤ 7"]];
 const age=()=>AGES.find(a=>a.k===ageK);
@@ -276,7 +288,7 @@ function keysOf(r){return [...new Set(r.i.filter(x=>x[3]!=="K").map(x=>norm(x[0]
 function rng(seed){let a=0;for(const c of seed)a=(a*31+c.charCodeAt(0))|0;return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
 function dayMenu(roll,recent){
   const rand=rng(iso(new Date())+"|"+ageK+"|"+maxT+"|"+maxI+"|"+roll);
-  const pools=["md","pr","ci","gu"].map(c=>{let p=R.filter(r=>matches(r,"",c));if(!p.length)p=R.filter(r=>fits(r)&&r.c===c);return p.map(r=>({r,k:keysOf(r)}))}).filter(p=>p.length);
+  const pools=["md","pr","ci","gu"].map(c=>{let p=R.filter(r=>matches(r,"",c)&&!disliked(r.id));if(!p.length)p=R.filter(r=>fits(r)&&r.c===c&&!disliked(r.id));return p.map(r=>({r,k:keysOf(r)}))}).filter(p=>p.length);
   // caută meniurile cu cele mai puține ingrediente distincte (cel mai mic număr + 2)
   let min=1e9;const found=[];
   const walk=(i,picked,set)=>{
@@ -285,12 +297,12 @@ function dayMenu(roll,recent){
   };
   walk(0,[],new Set());
   const rec=new Set(recent||[]);let bestS=1e9,pick=null;
-  for(const f of found){if(f.n>min+2)continue;const s=f.n+f.c.filter(r=>rec.has(r.id)).length*1.6+rand()*2.2;if(s<bestS){bestS=s;pick=f.c}}
+  for(const f of found){if(f.n>min+2)continue;const s=f.n+f.c.filter(r=>rec.has(r.id)).length*1.6-f.c.filter(r=>liked(r.id)).length*0.9+rand()*2.2;if(s<bestS){bestS=s;pick=f.c}}
   return pick;
 }
 let motd=store.get("motd",{});
 function currentMenu(){const sig=iso(new Date())+"|"+ageK+"|"+maxT+"|"+maxI;
-  if(motd.sig!==sig||!Array.isArray(motd.ids)||!motd.ids.every(id=>byId[id])){motd={sig,roll:0,recent:motd.recent||[],ids:dayMenu(0,motd.recent).map(r=>r.id)};store.set("motd",motd)}
+  if(motd.sig!==sig||!Array.isArray(motd.ids)||!motd.ids.every(id=>byId[id]&&!disliked(id))){motd={sig,roll:0,recent:motd.recent||[],ids:dayMenu(0,motd.recent).map(r=>r.id)};store.set("motd",motd)}
   return motd.ids.map(id=>byId[id])}
 function rerollMenu(){motd.recent=(motd.recent||[]).concat(motd.ids).slice(-16);motd.roll++;motd.ids=dayMenu(motd.roll,motd.recent).map(r=>r.id);store.set("motd",motd)}
 function motdHTML(){
@@ -317,7 +329,7 @@ function plannedDays(id){return days().filter(d=>(plan[d.k]||[]).includes(id))}
 function renderRetete(){
   const v=document.getElementById("v-retete");
   v.innerHTML=motdHTML()+`<h2 style="margin-top:6px">Toate rețetele</h2><input id="q" class="search" type="search" placeholder="Caută o rețetă sau un ingredient" value="${esc(query)}" aria-label="Caută">
-  <div class="chips" role="group" aria-label="Filtru">${[["all","Toate"],["md","Mic dejun"],["pr","Prânz"],["ci","Cină"],["gu","Gustări"]].map(([k,n])=>`<button class="chip" data-f="${k}" aria-pressed="${filter===k}">${n}</button>`).join("")}</div>
+  <div class="chips" role="group" aria-label="Filtru">${[["all","Toate"],["fav","♥ Îi plac"],["md","Mic dejun"],["pr","Prânz"],["ci","Cină"],["gu","Gustări"]].map(([k,n])=>`<button class="chip" data-f="${k}" aria-pressed="${filter===k}">${n}</button>`).join("")}</div>
   ${filtersHTML()}
   <p class="muted count" id="cnt"></p>
   <div class="grid" id="rl"></div>`;
@@ -327,15 +339,19 @@ function renderRetete(){
   v.querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{filter=b.dataset.f;v.querySelectorAll("[data-f]").forEach(x=>x.setAttribute("aria-pressed",x===b));renderList()});
   renderList();
 }
-function matches(r,q,f){q=q.trim().toLowerCase();return fits(r)&&(f==="all"||r.c===f)&&(!maxT||r.t<=maxT)&&(!maxI||r.i.length<=maxI)&&(!q||r.n.toLowerCase().includes(q)||r.i.some(x=>x[0].toLowerCase().includes(q)))}
+function matches(r,q,f){q=q.trim().toLowerCase();return fits(r)&&(f==="all"||r.c===f||(f==="fav"&&liked(r.id)))&&(!maxT||r.t<=maxT)&&(!maxI||r.i.length<=maxI)&&(!q||r.n.toLowerCase().includes(q)||r.i.some(x=>x[0].toLowerCase().includes(q)))}
 function renderList(){
-  const items=R.filter(r=>matches(r,query,filter));
+  const all=R.filter(r=>matches(r,query,filter));const hidden=all.filter(r=>disliked(r.id));
+  const items=(showDis?all:all.filter(r=>!disliked(r.id))).sort((a,b)=>(prefs[b.id]||0)-(prefs[a.id]||0));
   document.getElementById("cnt").textContent=items.length+(items.length===1?" rețetă":" rețete")+" pentru "+age().n+(maxT?", maxim "+maxT+" minute":"")+(maxI?", maxim "+maxI+" ingrediente":"");
   const el=document.getElementById("rl");
-  el.innerHTML=items.length?items.map(r=>{const pd=plannedDays(r.id);return`<button class="rcard" data-id="${r.id}">${imgTag(r.id,"ph",r.n)}
+  el.innerHTML=items.length?items.map(r=>{const pd=plannedDays(r.id);return`<button class="rcard${disliked(r.id)?" dis":""}" data-id="${r.id}">${imgTag(r.id,"ph",r.n)}
+    ${liked(r.id)?`<span class="heart" aria-label="Îi place">♥</span>`:disliked(r.id)?`<span class="heart no">Nu-i place</span>`:""}
     ${pd.length?`<span class="pin">${pd.length===1?pd[0].name:"în "+pd.length+" zile"}</span>`:""}
     <span class="body"><span class="meta"><span class="tx-${r.c}">${CAT[r.c]}</span><span class="t">${r.t} min · ${r.i.length} ingr.</span></span><h3>${r.n}</h3></span></button>`}).join("")
-    :`<div class="empty" style="grid-column:1/-1">Nicio rețetă nu se potrivește tuturor filtrelor. Încearcă mai multe minute sau mai multe ingrediente.</div>`;
+    :`<div class="empty" style="grid-column:1/-1">${filter==="fav"?"Nu ai marcat încă nicio rețetă care îi place. Deschide o rețetă și apasă „Îi place”.":"Nicio rețetă nu se potrivește tuturor filtrelor. Încearcă mai multe minute sau mai multe ingrediente."}</div>`;
+  if(hidden.length)el.insertAdjacentHTML("beforeend",`<button class="btn ghost small hidtoggle" id="hid">${showDis?"Ascunde rețetele care nu-i plac":"Arată și rețetele care nu-i plac ("+hidden.length+")"}</button>`);
+  const hb=document.getElementById("hid");if(hb)hb.onclick=()=>{showDis=!showDis;renderList()};
   el.querySelectorAll(".rcard").forEach(b=>b.onclick=()=>openRecipe(b.dataset.id));
 }
 
@@ -357,7 +373,9 @@ function renderPlan(){
 }
 function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
 function autoFill(){
-  const pools={};["md","pr","ci","gu"].forEach(c=>pools[c]=shuffle(R.filter(r=>r.c===c&&fits(r)).map(r=>r.id)));
+  const pools={};["md","pr","ci","gu"].forEach(c=>{const ok=R.filter(r=>r.c===c&&fits(r)&&!disliked(r.id));
+    const fav=shuffle(ok.filter(r=>liked(r.id)).map(r=>r.id)),rest=shuffle(ok.filter(r=>!liked(r.id)).map(r=>r.id));
+    const mix=[];while(fav.length||rest.length){if(fav.length)mix.push(fav.shift());if(rest.length)mix.push(rest.shift());if(rest.length)mix.push(rest.shift())}pools[c]=mix});
   let n=0;days().forEach((d,i)=>{if((plan[d.k]||[]).length)return;const ids=[];["md","pr","ci","gu"].forEach(c=>{if(pools[c].length)ids.push(pools[c][i%pools[c].length])});if(ids.length){plan[d.k]=ids;n++}});
   save();renderPlan();toast(n?("Am completat "+n+(n===1?" zi":" zile")):"Toate zilele au deja rețete");
 }
@@ -367,11 +385,11 @@ function openPicker(dayKey){
   const {sc,sheet,close}=makeSheet();
   sheet.innerHTML=`<div class="pad"><div class="pick-head"><div class="toolbar"><div><span class="lbl">${d.long}</span><h2>Ce gătești ${d.i===0?"azi":d.i===1?"mâine":"în ziua asta"}?</h2></div><button class="close" aria-label="Închide">×</button></div>
     <input class="search" id="pq" type="search" placeholder="Caută" aria-label="Caută rețete">
-    <div class="chips" id="pf">${[["all","Toate"],["md","Mic dejun"],["pr","Prânz"],["ci","Cină"],["gu","Gustări"]].map(([k,n])=>`<button class="chip" data-f="${k}" aria-pressed="${k==="all"}">${n}</button>`).join("")}</div>${filtersHTML()}</div>
+    <div class="chips" id="pf">${[["all","Toate"],["fav","♥ Îi plac"],["md","Mic dejun"],["pr","Prânz"],["ci","Cină"],["gu","Gustări"]].map(([k,n])=>`<button class="chip" data-f="${k}" aria-pressed="${k==="all"}">${n}</button>`).join("")}</div>${filtersHTML()}</div>
     <div class="pick-grid" id="pg"></div>
     <div class="pick-foot"><button class="btn" id="ok"></button></div></div>`;
-  const draw=()=>{const items=R.filter(r=>matches(r,q,f));
-    sheet.querySelector("#pg").innerHTML=items.map(r=>`<button class="pcard" data-id="${r.id}" aria-pressed="${sel.has(r.id)}">${imgTag(r.id,"ph",r.n)}<span class="tick">✓</span><span class="body"><span class="lbl tx-${r.c}" style="font-size:.68rem">${CAT[r.c]} · ${r.t} min</span><br>${r.n}</span></button>`).join("")||`<p class="muted">Nicio rețetă nu se potrivește filtrelor.</p>`;
+  const draw=()=>{const items=R.filter(r=>matches(r,q,f)&&(!disliked(r.id)||sel.has(r.id))).sort((a,b)=>(prefs[b.id]||0)-(prefs[a.id]||0));
+    sheet.querySelector("#pg").innerHTML=items.map(r=>`<button class="pcard" data-id="${r.id}" aria-pressed="${sel.has(r.id)}">${imgTag(r.id,"ph",r.n)}<span class="tick">✓</span>${liked(r.id)?`<span class="heart">♥</span>`:""}<span class="body"><span class="lbl tx-${r.c}" style="font-size:.68rem">${CAT[r.c]} · ${r.t} min</span><br>${r.n}</span></button>`).join("")||`<p class="muted">Nicio rețetă nu se potrivește filtrelor.</p>`;
     sheet.querySelectorAll(".pcard").forEach(b=>b.onclick=()=>{const id=b.dataset.id;sel.has(id)?sel.delete(id):sel.add(id);b.setAttribute("aria-pressed",sel.has(id));foot()});foot()};
   const foot=()=>{sheet.querySelector("#ok").textContent=sel.size?("Salvează "+sel.size+(sel.size===1?" rețetă":" rețete")):"Salvează"};
   sheet.querySelector("#pq").addEventListener("input",e=>{q=e.target.value;draw()});
@@ -463,6 +481,7 @@ function openRecipe(id){
   sheet.innerHTML=`<div class="hero">${imgTag(r.id,"",r.n)}<button class="close" aria-label="Închide">×</button></div>
   <div class="pad"><div class="sheet-title"><span class="lbl tx-${r.c}">${CAT[r.c]}</span><h2>${r.n}</h2>
     <div class="facts"><span>${r.t} minute</span><span>${r.a<12?r.a+" luni":(r.a/12===1.5?"1 an și 6 luni":r.a/12+(r.a===12?" an":" ani"))}+</span><span>${r.i.length} ingrediente</span></div></div>
+    <div class="rate" id="rate"></div>
     <div class="planbox"><b>Adaugă în plan</b><div class="daychips" id="dc"></div></div>
     <div class="toolbar"><h3>Ingrediente</h3><div class="stepper"><button data-d="-1" aria-label="Mai puține">−</button><output id="sv"></output><button data-d="1" aria-label="Mai multe">+</button></div></div>
     <ul class="ing" id="ing"></ul>
@@ -474,7 +493,11 @@ function openRecipe(id){
     el.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{const k=b.dataset.k,l=plan[k]||[];
       if(l.includes(id)){plan[k]=l.filter(x=>x!==id);if(!plan[k].length)delete plan[k];toast("Scoasă din plan")}else{plan[k]=l.concat(id);toast("Adăugată · ingredientele sunt la Cumpărături")}
       save();drawDays();})};
-  drawIng();drawDays();
+  const drawRate=()=>{const el=sheet.querySelector("#rate");
+    el.innerHTML=`<button data-v="1" aria-pressed="${liked(id)}"><span aria-hidden="true">👍</span> Îi place</button><button data-v="-1" aria-pressed="${disliked(id)}"><span aria-hidden="true">👎</span> Nu-i place</button>`
+      +(disliked(id)?`<p class="muted rate-note">Nu o mai recomand în meniul zilei și la completarea automată.</p>`:liked(id)?`<p class="muted rate-note">O recomand mai des în meniul zilei.</p>`:"");
+    el.querySelectorAll("button").forEach(b=>b.onclick=()=>{setPref(id,+b.dataset.v);drawRate();toast(liked(id)?"Notat: îi place":disliked(id)?"Notat: nu o mai recomand":"Am șters nota")})};
+  drawIng();drawDays();drawRate();
   sheet.querySelectorAll(".stepper button").forEach(b=>b.onclick=()=>{const step=r.s>=8?r.s/2:1;serv=Math.max(step,Math.min(r.s*4,serv+(+b.dataset.d)*step));drawIng()});
   sheet.querySelector(".close").onclick=()=>{close();route(true)};
   sheet.parentElement.addEventListener("click",e=>{if(e.target===sheet.parentElement)route(true)});
